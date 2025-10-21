@@ -17,7 +17,9 @@ package ping_test
 import (
 	"context"
 	"io"
+	"math"
 	"testing"
+	"time"
 
 	"github.com/openconfig/featureprofiles/internal/deviations"
 	"github.com/openconfig/featureprofiles/internal/fptest"
@@ -425,6 +427,22 @@ func TestGNOIPing(t *testing.T) {
 			StdDevZero := true
 			pingTime := responses[len(responses)-1].Time
 
+			var sum int64
+			for _, resp := range responses {
+				sum += resp.Time
+			}
+			mean := float64(sum) / float64(int64(len(responses)))
+			var std float64
+			for _, resp := range responses {
+				std += math.Pow(float64(resp.Time)-mean, 2)
+			}
+			std = math.Sqrt(std / float64(len(responses)))
+
+			// if the pings have a low standard deviation (under 1000ns), then the ping
+			// utility will express this as a ping of 0.000.
+			// This can happen when pinging to a loopback address (as in this test).
+			isExpressibleStdDev := std >= float64(1000*time.Nanosecond)
+
 			for i := 0; i < len(responses)-1; i++ {
 				t.Logf("Check each ping reply %v out of %v.\n  %v\n", i+1, len(responses), responses[i])
 
@@ -469,7 +487,7 @@ func TestGNOIPing(t *testing.T) {
 			if summary.MaxTime < tc.expectedStats.MaxTime {
 				t.Errorf("Ping MaxTime: got %v, want >= %v", summary.MaxTime, tc.expectedStats.MaxTime)
 			}
-			if summary.StdDev < tc.expectedStats.StdDev && !StdDevZero {
+			if summary.StdDev < tc.expectedStats.StdDev && !StdDevZero && isExpressibleStdDev {
 				t.Errorf("Ping Standard Deviation: got %v, want >= %v", summary.StdDev, tc.expectedStats.StdDev)
 			}
 		})
